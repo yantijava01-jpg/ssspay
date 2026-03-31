@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-dark-900 text-white font-sans;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-800;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gold-600 rounded-full;
+  }
+
+  /* Remove number input arrows */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* ── Glassmorphism card ── */
+  .glass-card {
+    @apply bg-glass-gradient backdrop-blur-xl border border-white/10 rounded-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .glass-card-gold {
+    @apply glass-card border-gold-500/30;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(245, 158, 11, 0.15);
+  }
+
+  /* ── Gold button ── */
+  .btn-gold {
+    @apply bg-gold-gradient text-dark-900 font-bold rounded-xl px-6 py-3
+           transition-all duration-200 active:scale-95 disabled:opacity-50
+           disabled:cursor-not-allowed select-none;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+  }
+
+  .btn-gold:not(:disabled):hover {
+    box-shadow: 0 6px 25px rgba(245, 158, 11, 0.6);
+    transform: translateY(-1px);
+  }
+
+  /* ── Ghost button ── */
+  .btn-ghost {
+    @apply border border-white/20 text-white/80 font-medium rounded-xl px-6 py-3
+           transition-all duration-200 active:scale-95 hover:border-gold-500/50
+           hover:text-white select-none;
+  }
+
+  /* ── Input field ── */
+  .input-field {
+    @apply w-full bg-dark-700 border border-white/10 rounded-xl px-4 py-3
+           text-white placeholder-white/30 outline-none transition-all duration-200
+           focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/20;
+  }
+
+  /* ── Gold text gradient ── */
+  .text-gold-gradient {
+    @apply bg-gold-gradient bg-clip-text text-transparent;
+  }
+
+  /* ── Status badge ── */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-success  { @apply badge bg-emerald-500/20 text-emerald-400 border border-emerald-500/30; }
+  .badge-warning  { @apply badge bg-amber-500/20 text-amber-400 border border-amber-500/30; }
+  .badge-danger   { @apply badge bg-red-500/20 text-red-400 border border-red-500/30; }
+  .badge-info     { @apply badge bg-blue-500/20 text-blue-400 border border-blue-500/30; }
+  .badge-pending  { @apply badge bg-purple-500/20 text-purple-400 border border-purple-500/30; }
+
+  /* ── Bottom nav safe area ── */
+  .bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 z-50;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* ── Page container ── */
+  .page-container {
+    @apply max-w-md mx-auto min-h-dvh pb-24 px-4;
+  }
+}
+
+@layer utilities {
+  .min-h-dvh { min-height: 100dvh; }
+  .h-dvh     { height: 100dvh; }
+
+  /* Glow effects */
+  .glow-gold {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+  }
+  .glow-gold-lg {
+    box-shadow: 0 0 40px rgba(245, 158, 11, 0.5);
+  }
+
+  /* Safe area padding */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
