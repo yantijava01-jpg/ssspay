@@ -27,7 +27,7 @@ const server = http.createServer(app);
 // ── Socket.io ────────────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "https://ssspay-git-main-yantijava01-jpgs-projects.vercel.app",
+    origin: process.env.CLIENT_URL || "https://ssspay.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -40,7 +40,7 @@ registerSocketHandlers(io);
 
 // ── Core middleware ───────────────────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.CLIENT_URL || "https://ssspay-git-main-yantijava01-jpgs-projects.vercel.app",
+  origin: process.env.CLIENT_URL || "https://ssspay.vercel.app",
 }));
 
 app.use(express.json({ limit: "10kb" }));
@@ -86,7 +86,7 @@ const startServer = async () => {
     console.log(`🚀 SSSPay Server running on port ${PORT}`);
     console.log(`🌍 Environment : ${process.env.NODE_ENV || "development"}`);
     console.log(`🔌 Socket.io   : enabled`);
-    console.log(`🛡  CORS origin : ${process.env.CLIENT_URL || "https://ssspay-git-main-yantijava01-jpgs-projects.vercel.app"}`);
+    console.log(`🛡  CORS origin : ${process.env.CLIENT_URL || "https://ssspay.vercel.app"}`);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     console.log("📋 API Endpoints:");
     console.log("   POST  /api/auth/register");
