@@ -1,33 +1,33 @@
 require("dotenv").config();
-const express     = require("express");
-const http        = require("http");
-const { Server }  = require("socket.io");
-const cors        = require("cors");
-const morgan      = require("morgan");
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
+const morgan = require("morgan");
 
-const connectDB               = require("./config/db");
-const { apiLimiter }          = require("./middleware/rateLimiter");
+const connectDB = require("./config/db");
+const { apiLimiter } = require("./middleware/rateLimiter");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
-const { captureClientInfo }   = require("./middleware/captureClientInfo");
-const { initSocket }          = require("./sockets/socketManager");
+const { captureClientInfo } = require("./middleware/captureClientInfo");
+const { initSocket } = require("./sockets/socketManager");
 const { registerSocketHandlers } = require("./sockets/socketHandlers");
 
 // ── Route imports ────────────────────────────────────────────────────────────
-const authRoutes     = require("./routes/auth");
-const orderRoutes    = require("./routes/orders");
-const upiRoutes      = require("./routes/upi");
-const noticeRoutes   = require("./routes/notices");
+const authRoutes = require("./routes/auth");
+const orderRoutes = require("./routes/orders");
+const upiRoutes = require("./routes/upi");
+const noticeRoutes = require("./routes/notices");
 const settingsRoutes = require("./routes/settings");
-const adminRoutes    = require("./routes/admin");
+const adminRoutes = require("./routes/admin");
 
 // ── App + HTTP server ────────────────────────────────────────────────────────
-const app    = express();
+const app = express();
 const server = http.createServer(app);
 
 // ── Socket.io ────────────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "https://ssspay.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -40,7 +40,7 @@ registerSocketHandlers(io);
 
 // ── Core middleware ───────────────────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin: process.env.CLIENT_URL || "https://ssspay.vercel.app",
   credentials: true,
 }));
 
@@ -66,12 +66,12 @@ app.get("/health", (req, res) => {
 });
 
 // ── API routes ────────────────────────────────────────────────────────────────
-app.use("/api/auth",     authRoutes);
-app.use("/api/orders",   orderRoutes);
-app.use("/api/upi",      upiRoutes);
-app.use("/api/notices",  noticeRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/upi", upiRoutes);
+app.use("/api/notices", noticeRoutes);
 app.use("/api/settings", settingsRoutes);
-app.use("/api/admin",    adminRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ── 404 + Error handlers ──────────────────────────────────────────────────────
 app.use(notFound);
@@ -87,7 +87,7 @@ const startServer = async () => {
     console.log(`🚀 SSSPay Server running on port ${PORT}`);
     console.log(`🌍 Environment : ${process.env.NODE_ENV || "development"}`);
     console.log(`🔌 Socket.io   : enabled`);
-    console.log(`🛡  CORS origin : ${process.env.CLIENT_URL || "http://localhost:5173"}`);
+    console.log(`🛡  CORS origin : ${process.env.CLIENT_URL || "https://ssspay.vercel.app"}`);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     console.log("📋 API Endpoints:");
     console.log("   POST  /api/auth/register");
