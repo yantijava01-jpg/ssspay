@@ -10,7 +10,7 @@ import GlassCard from "../components/ui/GlassCard";
 import useCountdown from "../hooks/useCountdown";
 import useCopyToClipboard from "../hooks/useCopyToClipboard";
 
-const COUNTDOWN_SECS = 180;
+const COUNTDOWN_SECS = 1800;
 
 const TABS = [
   { id: "inr", label: "₹ INR Deposit", icon: "💰" },
