@@ -9,6 +9,10 @@ export const settingsService = {
 };
 
 export const upiService = {
+  // ✅ Updated — now supports multiple UPIs per user
   submitUPI: (data) => api.post("/upi", data),
-  getMyUPI:  ()     => api.get("/upi"),
+  getMyUPIs: () => api.get("/upi"),
+
+  // Keep old name as alias so nothing breaks
+  getMyUPI: () => api.get("/upi"),
 };
