@@ -410,10 +410,10 @@ const approveOrder = async (req, res) => {
     const user = await User.findById(order.userId._id || order.userId);
     if (!user) return sendError(res, "Order user not found.", 404);
 
-    // ✅ Both balance AND reward credited atomically
-    user.balance += finalAmount;
-    user.reward += rewardAmount;
-    user.totalDeposits += finalAmount;
+    // ✅ Deposit + cashback both go into main balance
+    user.balance       += finalAmount + rewardAmount;  // main wallet gets deposit + cashback
+    user.reward        += rewardAmount;                // reward wallet also tracks cashback
+    user.totalDeposits += finalAmount;;
 
     order.status = ORDER_STATUS.SUCCESS;
     order.approvedAmount = finalAmount;
