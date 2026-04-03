@@ -15,13 +15,8 @@ const { getIO } = require("../sockets/socketManager");
 const getAnalytics = async (req, res) => {
   try {
     const [
-      totalUsers,
-      activeUsers,
-      pendingUsers,
-      totalOrders,
-      successOrders,
-      pendingOrders,
-      processingOrders,
+      totalUsers, activeUsers, pendingUsers,
+      totalOrders, successOrders, pendingOrders, processingOrders,
     ] = await Promise.all([
       User.countDocuments({ role: "user" }),
       User.countDocuments({ role: "user", status: "active" }),
@@ -32,7 +27,6 @@ const getAnalytics = async (req, res) => {
       Order.countDocuments({ status: ORDER_STATUS.PROCESSING }),
     ]);
 
-    // Total deposits (sum of all successful order amounts)
     const depositAgg = await Order.aggregate([
       { $match: { status: ORDER_STATUS.SUCCESS } },
       {
@@ -51,24 +45,26 @@ const getAnalytics = async (req, res) => {
       },
     ]);
 
-    // Total rewards given
     const rewardAgg = await Transaction.aggregate([
       { $match: { type: TRANSACTION_TYPE.REWARD } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
-    // Total withdrawals
     const withdrawAgg = await Transaction.aggregate([
       { $match: { type: TRANSACTION_TYPE.WITHDRAW } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
-    // Last 7 days order trend
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const orderTrend = await Order.aggregate([
-      { $match: { createdAt: { $gte: sevenDaysAgo }, status: ORDER_STATUS.SUCCESS } },
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo },
+          status: ORDER_STATUS.SUCCESS,
+        },
+      },
       {
         $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
@@ -87,28 +83,85 @@ const getAnalytics = async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    return sendSuccess(
-      res,
-      {
-        users: { total: totalUsers, active: activeUsers, pending: pendingUsers },
-        orders: {
-          total: totalOrders,
-          success: successOrders,
-          pending: pendingOrders,
-          processing: processingOrders,
-        },
-        financials: {
-          totalDeposits: depositAgg[0]?.total || 0,
-          totalRewards: rewardAgg[0]?.total || 0,
-          totalWithdrawals: withdrawAgg[0]?.total || 0,
-        },
-        orderTrend,
+    return sendSuccess(res, {
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        pending: pendingUsers,
       },
-      "Analytics fetched."
-    );
+      orders: {
+        total: totalOrders,
+        success: successOrders,
+        pending: pendingOrders,
+        processing: processingOrders,
+      },
+      financials: {
+        totalDeposits: depositAgg[0]?.total || 0,
+        totalRewards: rewardAgg[0]?.total || 0,
+        totalWithdrawals: withdrawAgg[0]?.total || 0,
+      },
+      orderTrend,
+    }, "Analytics fetched.");
   } catch (error) {
     console.error("GetAnalytics error:", error);
     return sendError(res, "Failed to fetch analytics.", 500);
+  }
+};
+
+// ════════════════════════════════════════════════════════════
+//  TRANSACTIONS (Admin — all users)
+// ════════════════════════════════════════════════════════════
+
+const getAllTransactions = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+    const { type, userId, search } = req.query;
+
+    const filter = {};
+    if (type) filter.type = type;
+    if (userId) filter.userId = userId;
+
+    if (search) {
+      const matched = await User.find({
+        phone: { $regex: search, $options: "i" },
+      }).select("_id");
+      filter.userId = { $in: matched.map((u) => u._id) };
+    }
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find(filter)
+        .populate("userId", "phone")
+        .populate("orderId", "orderId amount")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Transaction.countDocuments(filter),
+    ]);
+
+    const summary = await Transaction.aggregate([
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const summaryMap = { deposit: 0, reward: 0, referral: 0, withdraw: 0 };
+    summary.forEach((s) => { summaryMap[s._id] = s.total; });
+
+    return sendSuccess(res, {
+      transactions,
+      summary: summaryMap,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    }, "Transactions fetched.");
+  } catch (error) {
+    console.error("GetAllTransactions error:", error);
+    return sendError(res, "Failed to fetch transactions.", 500);
   }
 };
 
@@ -137,11 +190,10 @@ const getAllUsers = async (req, res) => {
       User.countDocuments(filter),
     ]);
 
-    return sendSuccess(
-      res,
-      { users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
-      "Users fetched."
-    );
+    return sendSuccess(res, {
+      users,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    }, "Users fetched.");
   } catch (error) {
     console.error("GetAllUsers error:", error);
     return sendError(res, "Failed to fetch users.", 500);
@@ -156,17 +208,15 @@ const getUserById = async (req, res) => {
 
     if (!user) return sendError(res, "User not found.", 404);
 
-    const [upi, recentOrders, txSummary] = await Promise.all([
-      UPI.findOne({ userId: user._id }),
+    const [upis, recentOrders, txSummary] = await Promise.all([
+      UPI.find({ userId: user._id }).sort({ createdAt: -1 }).lean(),
       Order.find({ userId: user._id }).sort({ createdAt: -1 }).limit(5).lean(),
       Transaction.getUserSummary(user._id),
     ]);
 
-    return sendSuccess(
-      res,
-      { user, upi, recentOrders, txSummary },
-      "User details fetched."
-    );
+    return sendSuccess(res, {
+      user, upis, recentOrders, txSummary,
+    }, "User details fetched.");
   } catch (error) {
     console.error("GetUserById error:", error);
     return sendError(res, "Failed to fetch user.", 500);
@@ -176,6 +226,7 @@ const getUserById = async (req, res) => {
 const updateUserStatus = async (req, res) => {
   try {
     const { status } = req.body;
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { status },
@@ -184,13 +235,12 @@ const updateUserStatus = async (req, res) => {
 
     if (!user) return sendError(res, "User not found.", 404);
 
-    // Emit realtime notification to user
     try {
       getIO().to(`user_${user._id}`).emit("notification", {
         type: "account_status",
         message: `Your account status has been updated to: ${status}`,
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(res, { user }, `User status updated to ${status}.`);
   } catch (error) {
@@ -214,7 +264,7 @@ const toggleFreezeUser = async (req, res) => {
           ? "Your account has been frozen. Contact support."
           : "Your account has been unfrozen.",
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(
       res,
@@ -234,7 +284,7 @@ const resetUserPassword = async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return sendError(res, "User not found.", 404);
 
-    user.password = newPassword; // pre-save hook hashes it
+    user.password = newPassword;
     await user.save();
 
     return sendSuccess(res, {}, "User password reset successfully.");
@@ -244,7 +294,7 @@ const resetUserPassword = async (req, res) => {
   }
 };
 
-// ─── ADJUST BALANCE (manual add/deduct) ──────────────────────────────────────
+// ✅ UPDATED — balance can go below zero, no minimum check
 const adjustBalance = async (req, res) => {
   try {
     const { amount, type, description } = req.body;
@@ -254,9 +304,7 @@ const adjustBalance = async (req, res) => {
     if (!user) return sendError(res, "User not found.", 404);
 
     if (type === "deduct") {
-      if (user.balance < parsedAmount) {
-        return sendError(res, "Insufficient balance to deduct.", 400);
-      }
+      // ✅ No insufficient balance check — admin can deduct past zero
       user.balance -= parsedAmount;
       user.totalWithdrawals += parsedAmount;
     } else {
@@ -266,23 +314,23 @@ const adjustBalance = async (req, res) => {
 
     await user.save({ validateBeforeSave: false });
 
-    // Create transaction record
     const tx = await Transaction.create({
       userId: user._id,
-      type: type === "deduct" ? TRANSACTION_TYPE.WITHDRAW : TRANSACTION_TYPE.DEPOSIT,
+      type: type === "deduct"
+        ? TRANSACTION_TYPE.WITHDRAW
+        : TRANSACTION_TYPE.DEPOSIT,
       amount: parsedAmount,
       description: description || `Manual ${type} by admin`,
       balanceAfter: user.balance,
       createdByAdmin: true,
     });
 
-    // Emit realtime balance update
     try {
       getIO().to(`user_${user._id}`).emit("balanceUpdated", {
         balance: user.balance,
         reward: user.reward,
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(
       res,
@@ -309,7 +357,6 @@ const getAllOrders = async (req, res) => {
     const filter = {};
     if (status) filter.status = status;
 
-    // Search by orderId or userId phone
     if (search) {
       const matchedUsers = await User.find({
         phone: { $regex: search, $options: "i" },
@@ -330,11 +377,10 @@ const getAllOrders = async (req, res) => {
       Order.countDocuments(filter),
     ]);
 
-    return sendSuccess(
-      res,
-      { orders, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
-      "Orders fetched."
-    );
+    return sendSuccess(res, {
+      orders,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    }, "Orders fetched.");
   } catch (error) {
     console.error("GetAllOrders error:", error);
     return sendError(res, "Failed to fetch orders.", 500);
@@ -356,36 +402,31 @@ const approveOrder = async (req, res) => {
     }
 
     const settings = await Settings.getSettings();
-    const finalAmount = approvedAmount
-      ? parseFloat(approvedAmount)
-      : order.amount;
-
+    const finalAmount = approvedAmount ? parseFloat(approvedAmount) : order.amount;
     const cashbackRate = settings.cashbackRate || 0.025;
     const referralRate = settings.referralRate || 0.003;
-
     const rewardAmount = parseFloat((finalAmount * cashbackRate).toFixed(2));
 
-    // Update order
+    const user = await User.findById(order.userId._id || order.userId);
+    if (!user) return sendError(res, "Order user not found.", 404);
+
+    // ✅ Both balance AND reward credited atomically
+    user.balance += finalAmount;
+    user.reward += rewardAmount;
+    user.totalDeposits += finalAmount;
+
     order.status = ORDER_STATUS.SUCCESS;
     order.approvedAmount = finalAmount;
     order.processedBy = req.user._id;
     order.processedAt = new Date();
     order.rewardGiven = rewardAmount;
 
-    const user = await User.findById(order.userId._id || order.userId);
-    if (!user) return sendError(res, "Order user not found.", 404);
-
-    // Credit balance + reward
-    user.balance += finalAmount;
-    user.reward += rewardAmount;
-    user.totalDeposits += finalAmount;
-
     const txDocs = [
       {
         userId: user._id,
         type: TRANSACTION_TYPE.DEPOSIT,
         amount: finalAmount,
-        description: `Deposit approved for order #${order.orderId}`,
+        description: `Deposit approved — Order #${order.orderId}`,
         orderId: order._id,
         balanceAfter: user.balance,
       },
@@ -393,79 +434,77 @@ const approveOrder = async (req, res) => {
         userId: user._id,
         type: TRANSACTION_TYPE.REWARD,
         amount: rewardAmount,
-        description: `${(cashbackRate * 100).toFixed(1)}% cashback on order #${order.orderId}`,
+        description: `${(cashbackRate * 100).toFixed(1)}% cashback — Order #${order.orderId}`,
         orderId: order._id,
         balanceAfter: user.balance,
       },
     ];
 
-    // Handle referral bonus
     let referralBonus = 0;
+    let referrer = null;
+
     if (user.referredBy) {
-      const referrer = await User.findById(user.referredBy);
+      referrer = await User.findById(user.referredBy);
       if (referrer && referrer.status === USER_STATUS.ACTIVE) {
         referralBonus = parseFloat((finalAmount * referralRate).toFixed(2));
-        referrer.reward += referralBonus;
         referrer.balance += referralBonus;
+        referrer.reward += referralBonus;
         order.referralGiven = referralBonus;
 
         txDocs.push({
           userId: referrer._id,
           type: TRANSACTION_TYPE.REFERRAL,
           amount: referralBonus,
-          description: `Referral bonus from ${user.phone}'s deposit #${order.orderId}`,
+          description: `Referral bonus — ${user.phone} deposited #${order.orderId}`,
           orderId: order._id,
           balanceAfter: referrer.balance,
         });
-
-        await referrer.save({ validateBeforeSave: false });
-
-        // Notify referrer
-        try {
-          getIO().to(`user_${referrer._id}`).emit("balanceUpdated", {
-            balance: referrer.balance,
-            reward: referrer.reward,
-          });
-          getIO().to(`user_${referrer._id}`).emit("notification", {
-            type: "referral_bonus",
-            message: `You earned ₹${referralBonus} referral bonus!`,
-          });
-        } catch (_) {}
       }
     }
 
-    await Promise.all([
+    const saveOps = [
       order.save(),
       user.save({ validateBeforeSave: false }),
       Transaction.insertMany(txDocs),
-    ]);
+    ];
+    if (referrer) saveOps.push(referrer.save({ validateBeforeSave: false }));
 
-    // Emit realtime updates to the user
+    await Promise.all(saveOps);
+
     try {
       const io = getIO();
-      io.to(`user_${user._id}`).emit("orderUpdated", {
-        orderId: order.orderId,
-        status: ORDER_STATUS.SUCCESS,
-        amount: finalAmount,
-      });
+
       io.to(`user_${user._id}`).emit("balanceUpdated", {
         balance: user.balance,
         reward: user.reward,
       });
+      io.to(`user_${user._id}`).emit("orderUpdated", {
+        orderId: order.orderId,
+        status: ORDER_STATUS.SUCCESS,
+        amount: finalAmount,
+        reward: rewardAmount,
+      });
       io.to(`user_${user._id}`).emit("notification", {
         type: "order_approved",
-        message: `Your order #${order.orderId} of ₹${finalAmount} has been approved!`,
+        message: `Order #${order.orderId} approved! ₹${finalAmount} + ₹${rewardAmount} cashback added.`,
       });
-    } catch (_) {}
 
-    return sendSuccess(
-      res,
-      {
-        order: { ...order.toObject(), status: ORDER_STATUS.SUCCESS },
-        credited: { deposit: finalAmount, reward: rewardAmount, referral: referralBonus },
-      },
-      "Order approved and balance credited."
-    );
+      if (referrer) {
+        io.to(`user_${referrer._id}`).emit("balanceUpdated", {
+          balance: referrer.balance,
+          reward: referrer.reward,
+        });
+        io.to(`user_${referrer._id}`).emit("notification", {
+          type: "referral_bonus",
+          message: `You earned ₹${referralBonus} referral bonus!`,
+        });
+      }
+    } catch (_) { }
+
+    return sendSuccess(res, {
+      order: { ...order.toObject(), status: ORDER_STATUS.SUCCESS },
+      credited: { deposit: finalAmount, reward: rewardAmount, referral: referralBonus },
+    }, "Order approved — balance and reward credited simultaneously.");
   } catch (error) {
     console.error("ApproveOrder error:", error);
     return sendError(res, "Failed to approve order.", 500);
@@ -492,7 +531,6 @@ const rejectOrder = async (req, res) => {
     order.processedAt = new Date();
     await order.save();
 
-    // Notify user
     try {
       getIO().to(`user_${order.userId}`).emit("orderUpdated", {
         orderId: order.orderId,
@@ -501,9 +539,9 @@ const rejectOrder = async (req, res) => {
       });
       getIO().to(`user_${order.userId}`).emit("notification", {
         type: "order_rejected",
-        message: `Order #${order.orderId} has been rejected. ${adminNote || ""}`,
+        message: `Order #${order.orderId} rejected. ${adminNote || ""}`,
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(res, { order }, "Order rejected.");
   } catch (error) {
@@ -548,9 +586,9 @@ const updateUPIStatus = async (req, res) => {
     try {
       getIO().to(`user_${upi.userId._id}`).emit("notification", {
         type: "upi_status",
-        message: `Your UPI ID status has been updated to: ${status}`,
+        message: `Your UPI ID (${upi.upiId}) status updated to: ${status}`,
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(res, { upi }, "UPI status updated.");
   } catch (error) {
@@ -565,9 +603,7 @@ const updateUPIStatus = async (req, res) => {
 
 const getAllNotices = async (req, res) => {
   try {
-    const notices = await Notice.find()
-      .sort({ createdAt: -1 })
-      .lean();
+    const notices = await Notice.find().sort({ createdAt: -1 }).lean();
     return sendSuccess(res, { notices }, "Notices fetched.");
   } catch (error) {
     return sendError(res, "Failed to fetch notices.", 500);
@@ -587,7 +623,6 @@ const createNotice = async (req, res) => {
       createdBy: req.user._id,
     });
 
-    // Broadcast notice to all connected users
     try {
       getIO().emit("notification", {
         type: "new_notice",
@@ -595,7 +630,7 @@ const createNotice = async (req, res) => {
         message: notice.message,
         isPopup: notice.isPopup,
       });
-    } catch (_) {}
+    } catch (_) { }
 
     return sendSuccess(res, { notice }, "Notice created.", 201);
   } catch (error) {
@@ -629,7 +664,7 @@ const deleteNotice = async (req, res) => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  SETTINGS MANAGEMENT
+//  SETTINGS
 // ════════════════════════════════════════════════════════════
 
 const getAdminSettings = async (req, res) => {
@@ -681,7 +716,7 @@ const exportUsers = async (req, res) => {
     ]);
 
     const csv = [headers, ...rows]
-      .map((row) => row.map((v) => `"${v}"`).join(","))
+      .map((r) => r.map((v) => `"${v}"`).join(","))
       .join("\n");
 
     res.setHeader("Content-Type", "text/csv");
@@ -715,7 +750,7 @@ const exportOrders = async (req, res) => {
     ]);
 
     const csv = [headers, ...rows]
-      .map((row) => row.map((v) => `"${v}"`).join(","))
+      .map((r) => r.map((v) => `"${v}"`).join(","))
       .join("\n");
 
     res.setHeader("Content-Type", "text/csv");
@@ -727,32 +762,30 @@ const exportOrders = async (req, res) => {
   }
 };
 
+// ════════════════════════════════════════════════════════════
+//  EXPORTS
+// ════════════════════════════════════════════════════════════
+
 module.exports = {
-  // Analytics
   getAnalytics,
-  // Users
+  getAllTransactions,
   getAllUsers,
   getUserById,
   updateUserStatus,
   toggleFreezeUser,
   resetUserPassword,
   adjustBalance,
-  // Orders
   getAllOrders,
   approveOrder,
   rejectOrder,
-  // UPI
   getAllUPIs,
   updateUPIStatus,
-  // Notices
   getAllNotices,
   createNotice,
   updateNotice,
   deleteNotice,
-  // Settings
   getAdminSettings,
   updateSettings,
-  // Export
   exportUsers,
   exportOrders,
 };

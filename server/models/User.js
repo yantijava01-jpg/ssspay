@@ -15,7 +15,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"],
-      select: false, // never returned in queries by default
+      select: false,
     },
     role: {
       type: String,
@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema(
     balance: {
       type: Number,
       default: 0,
-      min: [0, "Balance cannot be negative"],
+      // ✅ No min constraint — balance can go negative
     },
     reward: {
       type: Number,
@@ -68,12 +68,9 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// ----- PRE-SAVE: Hash password -----
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(12);
@@ -81,28 +78,26 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// ----- PRE-SAVE: Generate referral code -----
 userSchema.pre("save", function (next) {
   if (!this.referralCode) {
     this.referralCode =
-      "SSS" + this.phone.slice(-4) + Math.random().toString(36).substring(2, 6).toUpperCase();
+      "SSS" +
+      this.phone.slice(-4) +
+      Math.random().toString(36).substring(2, 6).toUpperCase();
   }
   next();
 });
 
-// ----- METHOD: Compare passwords -----
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ----- METHOD: Safe user object (no password) -----
 userSchema.methods.toSafeObject = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;
 };
 
-// ----- VIRTUAL: Full display name -----
 userSchema.virtual("displayName").get(function () {
   return `User_${this.phone.slice(-4)}`;
 });

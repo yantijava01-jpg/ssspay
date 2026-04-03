@@ -7,8 +7,8 @@ const upiSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "User ID is required"],
-      unique: true, // One UPI per user
       index: true,
+      // ✅ REMOVED unique:true — now allows multiple UPIs per user
     },
     upiId: {
       type: String,
@@ -20,28 +20,33 @@ const upiSchema = new mongoose.Schema(
         "Please enter a valid UPI ID (e.g. name@upi)",
       ],
     },
+    label: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [30, "Label cannot exceed 30 characters"],
+    },
     status: {
       type: String,
       enum: Object.values(UPI_STATUS),
       default: UPI_STATUS.ENABLED,
       index: true,
     },
-    // Admin can add a note explaining status change
     adminNote: {
       type: String,
       default: null,
       trim: true,
     },
-    // Which admin last updated this
     updatedByAdmin: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
+
+// Max 7 UPIs per user enforced at controller level
+upiSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("UPI", upiSchema);

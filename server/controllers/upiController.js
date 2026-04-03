@@ -1,25 +1,36 @@
 const UPI = require("../models/UPI");
 const { sendSuccess, sendError } = require("../utils/response");
-const { UPI_STATUS } = require("../config/constants");
 
-// ─── SUBMIT UPI (user, once only) ─────────────────────────────────────────────
+const MAX_UPI_PER_USER = 7;
+
+// ── SUBMIT UPI (up to 7 per user) ─────────────────────────────────────────────
 const submitUPI = async (req, res) => {
   try {
-    const { upiId } = req.body;
+    const { upiId, label } = req.body;
 
-    // Check if already submitted
-    const existing = await UPI.findOne({ userId: req.user._id });
-    if (existing) {
+    // Count existing UPIs for this user
+    const existingCount = await UPI.countDocuments({ userId: req.user._id });
+    if (existingCount >= MAX_UPI_PER_USER) {
       return sendError(
         res,
-        "You have already submitted a UPI ID. Contact support to update it.",
+        `You can only add up to ${MAX_UPI_PER_USER} UPI IDs. Contact support to remove old ones.`,
         409
       );
+    }
+
+    // Check for duplicate UPI ID for this user
+    const duplicate = await UPI.findOne({
+      userId: req.user._id,
+      upiId: upiId.trim().toLowerCase(),
+    });
+    if (duplicate) {
+      return sendError(res, "This UPI ID is already added to your account.", 409);
     }
 
     const upi = await UPI.create({
       userId: req.user._id,
       upiId: upiId.trim().toLowerCase(),
+      label: label?.trim() || "",
     });
 
     return sendSuccess(
@@ -28,36 +39,42 @@ const submitUPI = async (req, res) => {
         upi: {
           _id: upi._id,
           upiId: upi.upiId,
+          label: upi.label,
           status: upi.status,
           createdAt: upi.createdAt,
         },
+        remaining: MAX_UPI_PER_USER - existingCount - 1,
       },
       "UPI ID submitted successfully.",
       201
     );
   } catch (error) {
     console.error("SubmitUPI error:", error);
-    if (error.code === 11000) {
-      return sendError(res, "You have already submitted a UPI ID.", 409);
-    }
     return sendError(res, "Failed to submit UPI ID.", 500);
   }
 };
 
-// ─── GET MY UPI ────────────────────────────────────────────────────────────────
-const getMyUPI = async (req, res) => {
+// ── GET MY UPIs ────────────────────────────────────────────────────────────────
+const getMyUPIs = async (req, res) => {
   try {
-    const upi = await UPI.findOne({ userId: req.user._id }).lean();
+    const upis = await UPI.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
 
     return sendSuccess(
       res,
-      { upi: upi || null },
-      upi ? "UPI fetched." : "No UPI ID submitted yet."
+      {
+        upis,
+        count: upis.length,
+        remaining: MAX_UPI_PER_USER - upis.length,
+        max: MAX_UPI_PER_USER,
+      },
+      "UPIs fetched."
     );
   } catch (error) {
-    console.error("GetMyUPI error:", error);
-    return sendError(res, "Failed to fetch UPI.", 500);
+    console.error("GetMyUPIs error:", error);
+    return sendError(res, "Failed to fetch UPIs.", 500);
   }
 };
 
-module.exports = { submitUPI, getMyUPI };
+module.exports = { submitUPI, getMyUPIs };
